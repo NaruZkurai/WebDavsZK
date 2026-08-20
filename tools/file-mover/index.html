@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>file-mover · drag &amp; drop A ⇄ B</title>
+<style>
+  :root { --bg:#111418; --panel:#1b2027; --panel2:#20262e; --text:#e6e9ee; --muted:#8a93a0; --accent:#4f9cff; --ok:#4caf7d; --err:#e06c75; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+  header { padding:10px 16px; display:flex; align-items:center; gap:14px; border-bottom:1px solid #262c34; }
+  header h1 { font-size:16px; margin:0; }
+  #noconfirm-wrap { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:12px; cursor:pointer; white-space:nowrap; }
+  #noconfirm-wrap input { margin:0; accent-color:var(--accent); }
+  #mode { display:flex; align-items:center; gap:6px; margin-left:auto; color:var(--muted); }
+  #mode input { accent-color:var(--accent); }
+  #status { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #searchwrap { position:relative; margin-left:auto; display:flex; align-items:center; }
+  #search { background:#11151a; border:1px solid #2a313b; color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; width:240px; }
+  #searchPc { background:#11151a; border:1px solid #2a313b; color:var(--text); padding:5px 6px; border-radius:6px; font-size:12px; }
+  #search:focus { outline:none; border-color:var(--accent); }
+  #searchres { position:absolute; top:100%; right:0; margin-top:6px; width:480px; max-height:50vh; overflow-y:auto; background:#1b2027; border:1px solid #33404e; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,.55); display:none; z-index:95; }
+  .sr-head { padding:6px 12px; font-size:12px; color:var(--muted); border-bottom:1px solid #2a313b; }
+  .sr-row { display:flex; gap:8px; align-items:center; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .sr-row:hover { background:#232b34; }
+  .sr-ico { color:var(--muted); }
+  .sr-name { font-weight:600; white-space:nowrap; }
+  .sr-path { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .sr-sz { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .sr-none { padding:10px 12px; color:var(--muted); font-size:13px; }
+  .midbar { display:flex; flex-direction:column; justify-content:center; gap:10px; padding:0 2px; }
+  .midbar button { background:#262d36; color:var(--text); border:1px solid #33404e; border-radius:8px; padding:10px 8px; cursor:pointer; font-size:15px; min-width:46px; }
+  .midbar button:hover { background:#2f3844; }
+  .midbar button.primary { background:#2c4a6b; }
+  .midbar button.danger { background:#4a2530; border-color:#7a3a45; color:#ff9aa4; }
+  .midbar button.danger:hover { background:#5d2f3c; }
+  main { flex:1; display:flex; gap:10px; padding:10px; min-height:0; }
+  .panel { flex:1; display:flex; flex-direction:column; background:var(--panel); border:1px solid #2a313b; border-radius:8px; overflow:hidden; }
+  .panel .bar { padding:8px 10px; display:flex; gap:6px; background:var(--panel2); align-items:center; }
+  .panel .bar b { font-size:12px; color:var(--muted); }
+  .panel .bar select.pcsel { background:#11151a; border:1px solid #2a313b; color:var(--text); padding:3px 6px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; }
+  .panel .bar input { flex:1; background:#11151a; border:1px solid #2a313b; color:var(--text); padding:4px 6px; border-radius:4px; font-size:12px; }
+  .panel .bar button { background:#262d36; color:var(--text); border:1px solid #33404e; border-radius:4px; padding:3px 8px; cursor:pointer; }
+  .panel .bar button:hover { background:#2f3844; }
+  .files { flex:1; overflow-y:auto; padding:4px; }
+  .row { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:4px; cursor:default; user-select:none; }
+  .row:hover { background:#232b34; }
+  .row.selected { background:#2c4a6b; }
+  .row[data-dir="1"] { cursor:pointer; }
+  .row .ico { width:16px; text-align:center; color:var(--muted); }
+  .row .rowck { flex-shrink:0; width:15px; height:15px; accent-color:var(--accent); cursor:pointer; }
+  .row .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .sz { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .row[draggable="true"] { cursor:grab; }
+  .row[draggable="true"]:active { cursor:grabbing; }
+  .panel.dragover { border-color:var(--accent); box-shadow:0 0 0 2px rgba(79,156,255,.25); }
+  .panel.drop-target { border-color:var(--ok); }
+  #log { height:110px; border-top:1px solid #262c34; overflow-y:auto; padding:6px 12px; font-family:ui-monospace,monospace; font-size:12px; background:#0c0f12; user-select:text; }
+  #log div.ok { color:var(--ok); }
+  #log div.err { color:var(--err); }
+  #log div.info { color:var(--muted); }
+  #jobs { flex:0 0 auto; max-height:40vh; overflow-y:auto; border-top:1px solid #262c34; background:#0f1216; padding:6px 12px; user-select:text; }
+  #jobs:empty { display:none; }
+  .jrow { padding:6px 0; border-bottom:1px dashed #222a33; }
+  .jtop { display:flex; gap:8px; align-items:center; font-size:12px; }
+  .jop { color:var(--accent); font-weight:600; }
+  .jstat { color:var(--muted); margin-left:auto; font-family:ui-monospace,monospace; white-space:nowrap; }
+  .jpath { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jbar { margin:4px 0 2px; height:8px; background:#1a2027; border-radius:4px; overflow:hidden; }
+  .jfill { height:100%; width:0; background:var(--accent); transition:width .3s; }
+  .jfill.done { background:var(--ok); }
+  .jfill.err { background:var(--err); }
+  .jconsole { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); max-height:12em; overflow-y:auto; line-height:1.3; user-select:text; }
+  .jconsole div { white-space:normal; overflow-wrap:anywhere; word-break:break-all; }
+  .jconsole .err { color:var(--err); }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:50; }
+  .modal-box { background:#1b2027; border:1px solid #33404e; border-radius:10px; padding:20px 24px; min-width:280px; text-align:center; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  .modal-box p { margin:0 0 16px; font-size:15px; }
+  .modal-dst { color:var(--muted); font-size:12px; word-break:break-all; margin:-6px 0 16px; }
+  .modal-actions { display:flex; justify-content:center; }
+  .modal-box button { margin:0 6px; background:#262d36; color:var(--text); border:1px solid #33404e; border-radius:6px; padding:8px 18px; cursor:pointer; font-size:14px; }
+  .modal-box button.emphasis { box-shadow:0 0 0 2px var(--accent); }
+  /* header update button + version badge */
+  #updateBtn { background:#4a2530; border:1px solid #7a3a45; color:#ff9aa4; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  #updateBtn:hover { background:#5d2f3c; }
+  #updateBtn:disabled { opacity:.6; cursor:default; }
+  #ver { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); }
+  /* full-screen "updating server" overlay */
+  #updating { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:center; justify-content:center; z-index:100; }
+  #updating .modal-box .spin { font-size:28px; display:inline-block; animation:spin 1.2s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .modal-box button:hover { background:#2f3844; }
+  .modal-box button.primary { background:#2c4a6b; }
+  #pmodal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:60; }
+  #pmodal .modal-box input[type=password] { width:100%; box-sizing:border-box; margin:0 0 12px; padding:8px 10px; border-radius:6px; border:1px solid #33404e; background:#11151a; color:var(--text); font-size:14px; }
+  #cmodal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:70; }
+  #cmodal .modal-box b { color:var(--accent); word-break:break-all; }
+  #ctx { position:fixed; display:none; z-index:80; background:#1b2027; border:1px solid #33404e; border-radius:6px; box-shadow:0 4px 16px rgba(0,0,0,.5); padding:4px; min-width:150px; }
+  #ctx .ctx-item { padding:6px 12px; font-size:13px; cursor:pointer; border-radius:4px; }
+  #ctx .ctx-item:hover { background:#2c4a6b; }
+  #rmodal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:90; }
+  #rmodal .modal-box input[type=text] { width:100%; box-sizing:border-box; margin:0 0 12px; padding:8px 10px; border-radius:6px; border:1px solid #33404e; background:#11151a; color:var(--text); font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⇄ file-mover</h1>
+  <label id="noconfirm-wrap" title="Move/Copy without asking"><input type="checkbox" id="noConfirm"> no confirm</label>
+  <button id="swapBtn" title="Swap which PC is on the left/right">⇄ swap sides</button>
+  <button id="updateBtn" title="Pull latest + rebuild + restart the server" class="danger">⬆ Update server</button>
+  <span id="ver" title="Running server git commit"></span>
+  <div id="searchwrap"><select id="searchPc" title="Search scope"><option value="active">Active panel</option><option value="target">Target PC</option><option value="this">This PC</option></select><input id="search" spellcheck="false" placeholder="🔍  search: name, *.png, *.png;*.jpg…"><div id="searchres"></div></div>
+  <div id="status"></div>
+</header>
+<main>
+  <div class="panel" id="panelA">
+    <div class="bar"><select id="labelA" class="pcsel" title="Which PC this panel points at"></select><button data-up="A">↑</button><button data-refresh="A">⟳</button>
+      <button data-files="A" title="Upload files from local">⤒</button>
+      <button data-folder="A" title="Upload a folder from local">⤓</button>
+      <input id="pathA" spellcheck="false">
+      <input type="file" id="fileA" multiple style="display:none">
+      <input type="file" id="folderA" webkitdirectory style="display:none">
+    </div>
+    <div class="files" id="filesA"></div>
+  </div>
+  <div class="midbar">
+    <button id="swapMid" title="Swap which PC is on the left/right">⇄</button>
+    <button id="copyMid" title="Copy selection to the other side">⧉ Copy →</button>
+    <button id="moveMid" class="primary" title="Move selection to the other side">Move →</button>
+    <button id="delMid" class="danger" title="Delete selection">🗑 Delete</button>
+  </div>
+  <div class="panel" id="panelB">
+    <div class="bar"><select id="labelB" class="pcsel" title="Which PC this panel points at"></select><button data-up="B">↑</button><button data-refresh="B">⟳</button>
+      <button data-files="B" title="Upload files from local">⤒</button>
+      <button data-folder="B" title="Upload a folder from local">⤓</button>
+      <input id="pathB" spellcheck="false">
+      <input type="file" id="fileB" multiple style="display:none">
+      <input type="file" id="folderB" webkitdirectory style="display:none">
+    </div>
+    <div class="files" id="filesB"></div>
+  </div>
+</main>
+<div id="jobs"></div>
+<div id="log"></div>
+<div id="modal"><div class="modal-box">
+  <p>Move or Copy <b id="modalName"></b>?</p>
+  <p class="modal-dst" id="modalDst"></p>
+  <div class="modal-actions">
+    <button id="modalMove" class="primary">Move</button>
+    <button id="modalCopy">Copy</button>
+    <button id="modalCancel">Cancel</button>
+  </div>
+</div></div>
+<div id="pmodal"><div class="modal-box">
+  <p id="pmodalMsg">Admin password required</p>
+  <input type="password" id="pmodalPass" placeholder="sudo password" autocomplete="off">
+  <div><button id="pmodalOk" class="primary">OK</button><button id="pmodalCancel">Cancel</button></div>
+</div></div>
+<div id="cmodal"><div class="modal-box">
+  <p>Destination already exists:<br><b id="cmodalDst"></b><br>What do you want to do?</p>
+  <div>
+    <button id="cmodalMerge" class="primary">Merge / Overwrite</button>
+    <button id="cmodalRename">Rename</button>
+    <button id="cmodalCancel">Cancel</button>
+  </div>
+</div></div>
+<div id="ctx">
+  <div class="ctx-item" data-act="copyname">Copy name</div>
+  <div class="ctx-item" data-act="copypath">Copy path</div>
+  <div class="ctx-item" data-act="rename">Rename…</div>
+  <div class="ctx-item" data-act="settarget">Set as target window</div>
+  <div class="ctx-item" data-act="delete" style="color:var(--err)">Delete…</div>
+</div>
+<div id="rmodal"><div class="modal-box">
+  <p>Rename <b id="rmodalName"></b></p>
+  <input type="text" id="rmodalInput" spellcheck="false" autocomplete="off">
+  <div><button id="rmodalOk" class="primary">OK</button><button id="rmodalCancel">Cancel</button></div>
+</div></div>
+<div id="updating"><div class="modal-box">
+  <span class="spin">⟳</span>
+  <p>Updating server…<br><small id="updatingMsg"></small></p>
+</div></div>
+
+<script>
+const ROOTS = {};                        // (unused; roots come from /api/roots)
+const state = { A: null, B: null };
+
+const $ = s => document.querySelector(s);
+const log = document.getElementById('log');
+function logLine(msg, cls='info') {
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = msg;
+  log.prepend(d);
+}
+
+function fmtSize(n) {
+  if (n < 0) return '';
+  const u = ['B','KB','MB','GB','TB']; let i = 0;
+  while (n >= 1024 && i < u.length-1) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n) + ' ' + u[i];
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new Error(j.error || ('HTTP ' + r.status));
+    e.elevation = !!j.elevation;
+    e.conflict = !!j.conflict;
+    e.dst = j.dst || '';
+    throw e;
+  }
+  return j;
+}
+
+// ---------- background job progress ----------
+const jobsEl = document.getElementById('jobs');
+let pollTimer = null;
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderJobs(list) {
+  jobsEl.innerHTML = '';
+  for (const j of list) {
+    const pct = j.total_files ? Math.round(100 * j.done_files / j.total_files)
+             : (j.total_dirs ? Math.round(100 * j.done_dirs / j.total_dirs) : 0);
+    const fillCls = j.status === 'done' ? ' done' : (j.status === 'error' ? ' err' : '');
+    const row = document.createElement('div');
+    row.className = 'jrow';
+    const opLbl = ({ move: 'MOVE', copy: 'COPY', delete: 'DELETE' })[j.op] || (j.op || '').toUpperCase();
+    const dstPart = j.op === 'delete' ? '' : ' → ' + esc(j.dst || '');
+    row.innerHTML =
+      '<div class="jtop"><span class="jop">' + opLbl + '</span>' +
+      '<span class="jpath">' + esc((j.src || '').split('/').pop()) + dstPart + '</span>' +
+      '<span class="jstat">' + esc(j.status) + (j.status === 'running'
+        ? ' · ' + j.done_files + '/' + j.total_files + ' files · ' + j.done_dirs + '/' + j.total_dirs + ' folders · ' + fmtSize(j.done_bytes)
+        : (j.total_files || j.total_dirs ? ' · ' + j.done_files + ' files · ' + j.done_dirs + ' folders' : '')) + '</span></div>' +
+      '<div class="jbar"><div class="jfill' + fillCls + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="jconsole">' + (j.current || []).map(x => '<div>' + esc(x) + '</div>').join('') +
+      (j.error ? '<div class="err">✗ ' + esc(j.error) + '</div>' : '') + '</div>';
+    jobsEl.appendChild(row);
+  }
+}
+
+async function pollJobs() {
+  let list;
+  try {
+    list = (await api('/api/status')).jobs || [];
+  } catch (e) {
+    pollTimer = setTimeout(pollJobs, 2000);
+    return;
+  }
+  renderJobs(list);
+  const running = list.filter(x => x.status === 'queued' || x.status === 'running');
+  const errored = list.filter(x => x.status === 'error');
+  errored.forEach(x => logLine('job #' + x.id + ' error: ' + x.error, 'err'));
+  if (running.length) {
+    pollTimer = setTimeout(pollJobs, 1000);
+  } else {
+    pollTimer = null;
+    if (list.length) logLine('all jobs finished', 'ok');
+    if (list.some(x => x.status === 'done') || errored.length) {
+      if ($('#pathA').value) await ls('A');
+      if ($('#pathB').value) await ls('B');
+    }
+  }
+}
+
+function startPolling() {
+  if (!pollTimer) pollTimer = setTimeout(pollJobs, 400);
+}
+
+function renderList(panel, j) {
+  const slot = panelSlot(panel);
+  const inp = panel === 'A' ? $('#pathA') : $('#pathB');
+  const files = panel === 'A' ? $('#filesA') : $('#filesB');
+  state[panel] = j.path;
+  slotPaths[slot] = j.path;
+  inp.value = j.path;                 // reflect resolved path (webdav URL -> mount path)
+  $(panel === 'A' ? '#labelA' : '#labelB').value = slot;
+  files.innerHTML = '';
+  for (const e of j.entries) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.dir = e.is_dir ? '1' : '0';
+    row.draggable = true;
+    row.innerHTML = '<input type="checkbox" class="rowck">' +
+      '<span class="ico">' + (e.is_dir ? '📁' : (e.link ? '🔗' : '📄')) + '</span>' +
+      '<span class="nm"></span><span class="sz">' + (e.is_dir ? '' : fmtSize(e.size)) + '</span>';
+    row.querySelector('.nm').textContent = e.name + (e.link ? ' →' : '');
+    row.dataset.path = j.path.replace(/\/+$/, '') + '/' + e.name;
+    const ck = row.querySelector('.rowck');
+    ck.checked = selected.has(row.dataset.path);
+    ck.addEventListener('click', ev => {
+      ev.stopPropagation();
+      activePanel = panel;
+      selectRow(row, { path: row.dataset.path, panel, name: e.name }, true);
+    });
+    row.addEventListener('dragstart', ev => {
+      const multi = selected.has(row.dataset.path);
+      const items = multi ? [...selected.values()] : [{ path: row.dataset.path, panel, name: e.name }];
+      ev.dataTransfer.setData('text/plain', JSON.stringify({ panel, paths: items.map(i => i.path) }));
+      ev.dataTransfer.effectAllowed = 'copyMove';
+    });
+    row.addEventListener('click', ev => {
+      activePanel = panel;
+      if (ev.shiftKey) { selectRange(panel, row, { path: row.dataset.path, panel, name: e.name }); return; }
+      const additive = ev.ctrlKey || ev.metaKey;
+      if (additive) { selectRow(row, { path: row.dataset.path, panel, name: e.name }, true); return; }
+      if (e.is_dir) { inp.value = row.dataset.path; ls(panel); }
+      else selectRow(row, { path: row.dataset.path, panel, name: e.name });
+    });
+    row.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();           // don't let the document handler hide it
+      activePanel = panel;
+      if (!selected.has(row.dataset.path)) selectRow(row, { path: row.dataset.path, panel, name: e.name });
+      ctxSel = { path: row.dataset.path, panel, name: e.name, is_dir: e.is_dir };
+      showCtx(ev.clientX, ev.clientY);
+    });
+    files.appendChild(row);
+  }
+  // re-apply multi-selection after a re-render
+  for (const r of files.querySelectorAll('.row')) {
+    if (selected.has(r.dataset.path)) r.classList.add('selected');
+  }
+}
+
+async function ls(panel) {
+  const inp = panel === 'A' ? $('#pathA') : $('#pathB');
+  try {
+    renderList(panel, await api('/api/ls?p=' + encodeURIComponent(inp.value)));
+  } catch (err) {
+    if (err.elevation) {
+      const pw = await askPassword('Admin (sudo) password needed for ' + inp.value + ':');
+      if (pw) {
+        try {
+          renderList(panel, await api('/api/ls?p=' + encodeURIComponent(inp.value) + '&sudopass=' + encodeURIComponent(pw)));
+          logLine('elevated ls: ' + inp.value, 'ok');
+        } catch (e2) { logLine('ls ' + panel + ': ' + e2.message, 'err'); }
+      }
+    } else if (lsPathGone(err) && !lsAtRoot(panel)) {
+      // Current path vanished (deleted/removed) or is blank — recover by
+      // listing the panel's PC root instead of stranding the user on a dead
+      // path with error spam.
+      const root = PC_ROOTS[panelSlot(panel)];
+      if (root) {
+        inp.value = root;
+        logLine('ls ' + panel + ': path gone, reset to ' + root, 'info');
+        return ls(panel);
+      }
+      logLine('ls ' + panel + ': ' + err.message, 'err');
+    } else {
+      logLine('ls ' + panel + ': ' + err.message, 'err');
+    }
+  }
+}
+
+// True when a listing failed because the path doesn't exist / can't be opened.
+function lsPathGone(err) {
+  return /no such file or directory|not found|cannot access|os error 2/i.test(err.message || '');
+}
+
+// True when the panel is already showing its PC root (guard against recursion).
+function lsAtRoot(panel) {
+  const root = PC_ROOTS[panelSlot(panel)];
+  if (!root) return true;
+  const inp = panel === 'A' ? $('#pathA') : $('#pathB');
+  const cur = inp.value.replace(/\/+$/, '');
+  return cur === root.replace(/\/+$/, '');
+}
+
+// "No confirm" preference (top-bar checkbox), persisted across sessions. When
+// set, move/copy from the middle-bar buttons skip the confirm dialog.
+let noConfirm = localStorage.getItem('fmNoConfirm') === '1';
+const noConfirmEl = document.getElementById('noConfirm');
+noConfirmEl.checked = noConfirm;
+noConfirmEl.addEventListener('change', () => {
+  noConfirm = noConfirmEl.checked;
+  localStorage.setItem('fmNoConfirm', noConfirm ? '1' : '0');
+});
+
+function askMode(name, dst, preset) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('modal');
+    document.getElementById('modalName').textContent = name;
+    const dstEl = document.getElementById('modalDst');
+    if (dst) { dstEl.textContent = '→ ' + dst; dstEl.style.display = 'block'; }
+    else dstEl.style.display = 'none';
+    // Emphasise the pending action button (move or copy) when we know it.
+    const moveBtn = document.getElementById('modalMove');
+    const copyBtn = document.getElementById('modalCopy');
+    moveBtn.classList.toggle('emphasis', preset === 'move');
+    copyBtn.classList.toggle('emphasis', preset === 'copy');
+    modal.style.display = 'flex';
+    const done = op => {
+      modal.style.display = 'none';
+      moveBtn.classList.remove('emphasis');
+      copyBtn.classList.remove('emphasis');
+      resolve(op);
+    };
+    moveBtn.onclick = () => done('move');
+    copyBtn.onclick = () => done('copy');
+    document.getElementById('modalCancel').onclick = () => done(null);
+  });
+}
+
+function askPassword(msg) {
+  return new Promise(resolve => {
+    const pm = document.getElementById('pmodal');
+    document.getElementById('pmodalMsg').textContent = msg;
+    document.getElementById('pmodalPass').value = '';
+    pm.style.display = 'flex';
+    const done = v => { pm.style.display = 'none'; resolve(v); };
+    document.getElementById('pmodalOk').onclick = () => done(document.getElementById('pmodalPass').value || null);
+    document.getElementById('pmodalCancel').onclick = () => done(null);
+  });
+}
+
+function askConflict(dst) {
+  return new Promise(resolve => {
+    const cm = document.getElementById('cmodal');
+    document.getElementById('cmodalDst').textContent = dst;
+    cm.style.display = 'flex';
+    const done = v => { cm.style.display = 'none'; resolve(v); };
+    document.getElementById('cmodalMerge').onclick = () => done('merge');
+    document.getElementById('cmodalRename').onclick = () => done('rename');
+    document.getElementById('cmodalCancel').onclick = () => done(null);
+  });
+}
+
+// ---------- context menu (copy name / copy path / rename) ----------
+const ctx = document.getElementById('ctx');
+let ctxSel = null;
+
+function showCtx(x, y) {
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.style.display = 'block';
+}
+function hideCtx() { ctx.style.display = 'none'; ctxSel = null; }
+document.addEventListener('click', hideCtx);
+document.addEventListener('contextmenu', ev => { if (!ev.target.closest('#ctx')) hideCtx(); });
+
+// Copy to the system clipboard, with a fallback for non-secure contexts.
+async function copyText(t) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch { /* fall through */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
+
+ctx.addEventListener('click', async ev => {
+  const act = ev.target.dataset.act;
+  const s = ctxSel;
+  hideCtx();
+  if (!act || !s) return;
+  if (act === 'copyname') {
+    const ok = await copyText(s.name);
+    logLine(ok ? 'copied name: ' + s.name : 'copy name failed', ok ? 'ok' : 'err');
+  } else if (act === 'copypath') {
+    const ok = await copyText(s.path);
+    logLine(ok ? 'copied path: ' + s.path : 'copy path failed', ok ? 'ok' : 'err');
+  } else if (act === 'rename') {
+    const nn = await askRename(s.name);
+    if (nn) await renamePath(s.path, nn);
+  } else if (act === 'settarget') {
+    setTarget(s);
+  } else if (act === 'delete') {
+    // Delete the whole selection when multiple targets are selected, otherwise
+    // just the right-clicked item.
+    const items = selectedItems();
+    const targets = items.length ? items : [s];
+    const label = targets.length > 1
+      ? targets.length + ' items'
+      : s.name + (s.is_dir ? ' (whole folder)' : '');
+    const okdel = await askConfirm('Delete ' + label + '?');
+    if (okdel) await deleteItems(targets);
+  }
+});
+
+function askConfirm(msg) {
+  return new Promise(resolve => {
+    const pm = document.getElementById('pmodal');
+    document.getElementById('pmodalMsg').textContent = msg;
+    document.getElementById('pmodalPass').style.display = 'none';
+    pm.style.display = 'flex';
+    const done = v => { pm.style.display = 'none'; document.getElementById('pmodalPass').style.display = ''; resolve(v); };
+    document.getElementById('pmodalOk').onclick = () => done(true);
+    document.getElementById('pmodalCancel').onclick = () => done(false);
+  });
+}
+
+async function deletePath(src, sudopass) {
+  const body = { src };
+  if (sudopass) body.sudopass = sudopass;
+  try {
+    const j = await api('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (j.job_id) {
+      // Background delete: progress + file/folder counts live in the jobs
+      // panel; panels auto-refresh once the job completes.
+      logLine('DELETING ' + src + '  (job #' + j.job_id + ')', 'ok');
+      startPolling();
+      return;
+    }
+    logLine('DELETED ' + src, 'ok');
+    await ls('A'); await ls('B');
+  } catch (err) {
+    if (err.elevation) {
+      const pw = await askPassword('Admin (sudo) password needed to delete ' + src + ':');
+      if (pw) return await deletePath(src, pw);
+    }
+    logLine('DELETE ' + src + ': ' + err.message, 'err');
+    await ls('A'); await ls('B');
+  }
+}
+
+// Delete a list of selected items (right-click menu / middle-bar Delete).
+async function deleteItems(items) {
+  for (const it of items) await deletePath(it.path);
+  clearSelection();
+}
+
+// Middle-bar 🗑 Delete button: deletes the current selection.
+async function deleteSelection() {
+  const items = selectedItems();
+  if (!items.length) { logLine('nothing selected', 'info'); return; }
+  const label = items.length > 1 ? items.length + ' items' : items[0].name;
+  const okdel = await askConfirm('Delete ' + label + '?');
+  if (okdel) await deleteItems(items);
+}
+
+function setTarget(s) {
+  const other = s.panel === 'A' ? 'B' : 'A';
+  const inp = other === 'A' ? $('#pathA') : $('#pathB');
+  let p = s.path;
+  if (!s.is_dir) p = s.path.substring(0, s.path.lastIndexOf('/')) || '/';
+  inp.value = p;
+  logLine('target window → ' + p, 'info');
+  ls(other);
+}
+
+function askRename(name) {
+  return new Promise(resolve => {
+    const rm = document.getElementById('rmodal');
+    document.getElementById('rmodalName').textContent = name;
+    const inp = document.getElementById('rmodalInput');
+    inp.value = name;
+    rm.style.display = 'flex';
+    inp.focus(); inp.select();
+    const done = v => { rm.style.display = 'none'; resolve(v); };
+    document.getElementById('rmodalOk').onclick = () => done(inp.value.trim() || null);
+    document.getElementById('rmodalCancel').onclick = () => done(null);
+    inp.onkeydown = ev => {
+      if (ev.key === 'Enter') done(inp.value.trim() || null);
+      else if (ev.key === 'Escape') done(null);
+    };
+  });
+}
+
+async function renamePath(src, name, sudopass) {
+  const body = { src, name };
+  if (sudopass) body.sudopass = sudopass;
+  try {
+    const j = await api('/api/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    logLine('RENAMED ' + src.split('/').pop() + '  →  ' + (j.dst || name), 'ok');
+    await ls('A'); await ls('B');
+  } catch (err) {
+    if (err.elevation) {
+      const pw = await askPassword('Admin (sudo) password needed to rename ' + src + ':');
+      if (pw) return await renamePath(src, name, pw);
+    }
+    logLine('RENAME ' + src + ': ' + err.message, 'err');
+    await ls('A'); await ls('B');
+  }
+}
+
+// ---------- search ----------
+const searchInput = document.getElementById('search');
+const searchRes = document.getElementById('searchres');
+let searchTimer = null;
+
+function searchRoot() {
+  const sel = document.getElementById('searchPc').value;
+  if (sel === 'target') return PC_ROOTS.target_pc;
+  if (sel === 'this') return PC_ROOTS.this_pc;
+  return state[activePanel];
+}
+
+document.getElementById('searchPc').addEventListener('change', () => {
+  if (searchInput.value.trim()) { clearTimeout(searchTimer); doSearch(); }
+});
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doSearch, 350);
+});
+searchInput.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { clearTimeout(searchTimer); doSearch(); }
+  else if (ev.key === 'Escape') { searchInput.value = ''; hideSearchRes(); }
+});
+document.addEventListener('click', ev => { if (!ev.target.closest('#searchwrap')) hideSearchRes(); });
+
+function hideSearchRes() {
+  searchRes.innerHTML = '';
+  searchRes.style.display = 'none';
+  if (activeSearch && activeSearch.timer) clearTimeout(activeSearch.timer);
+  activeSearch = null;
+}
+
+let activeSearch = null;   // { id, timer }
+
+async function doSearch() {
+  const q = searchInput.value.trim();
+  const root = searchRoot();
+  if (!q || !root) return;
+  if (activeSearch && activeSearch.timer) clearTimeout(activeSearch.timer);
+  let j;
+  try {
+    j = await api('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ root, q }),
+    });
+  } catch (e) { logLine('search: ' + e.message, 'err'); return; }
+  activeSearch = { id: j.search_id, timer: null };
+  searchRes.innerHTML = '';
+  searchRes.style.display = 'block';
+  pollSearch();
+}
+
+async function pollSearch() {
+  const s = activeSearch;
+  if (!s) return;
+  let j;
+  try {
+    j = await api('/api/search?id=' + s.id);
+  } catch (e) { logLine('search: ' + e.message, 'err'); activeSearch = null; return; }
+  renderSearch(j);
+  if (j.status === 'done' || j.status === 'error') {
+    activeSearch = null;
+    return;
+  }
+  s.timer = setTimeout(pollSearch, 400);
+}
+
+function renderSearch(j) {
+  const matches = j.matches || [];
+  searchRes.innerHTML = '';
+  const running = j.status === 'running';
+  const head = document.createElement('div');
+  head.className = 'sr-head';
+  head.textContent = (running ? '⏳ ' : '') + matches.length + (j.truncated ? '+ ' : ' ') +
+    'match(es)' + (j.done_dirs ? ' · ' + j.done_dirs + ' dirs' : '') + ' in ' + j.root;
+  searchRes.appendChild(head);
+  if (!matches.length && !running) {
+    const d = document.createElement('div');
+    d.className = 'sr-none';
+    d.textContent = 'no matches in ' + j.root;
+    searchRes.appendChild(d);
+    return;
+  }
+  for (const m of matches) {
+    const row = document.createElement('div');
+    row.className = 'sr-row';
+    row.innerHTML = '<span class="sr-ico">' + (m.is_dir ? '📁' : '📄') + '</span>' +
+      '<span class="sr-name">' + esc(m.name) + '</span>' +
+      '<span class="sr-path">' + esc(m.path) + '</span>' +
+      '<span class="sr-sz">' + (m.is_dir ? '' : fmtSize(m.size)) + '</span>';
+    row.addEventListener('click', () => openSearchResult(m));
+    searchRes.appendChild(row);
+  }
+}
+
+async function openSearchResult(m) {
+  const panel = activePanel;
+  const inp = panel === 'A' ? $('#pathA') : $('#pathB');
+  const parent = m.path.substring(0, m.path.lastIndexOf('/')) || '/';
+  inp.value = parent;
+  hideSearchRes();
+  await ls(panel);
+  const files = panel === 'A' ? $('#filesA') : $('#filesB');
+  const row = [...files.querySelectorAll('.row')].find(r => r.querySelector('.nm').textContent.trim() === m.name);
+  if (row) {
+    selectRow(row, { path: m.path, panel, name: m.name });
+    row.scrollIntoView({ block: 'center' });
+  }
+}
+
+async function doOp(srcPath, dstDir, isMove, sudopass, strategy) {
+  try {
+    const body = { src: srcPath, dst: dstDir, copy: !isMove };
+    if (sudopass) body.sudopass = sudopass;
+    if (strategy) body.strategy = strategy;
+    const j = await api(isMove ? '/api/move' : '/api/copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (j.job_id) {
+      if (j.deduped) {
+        // A move/copy of this file was already in progress — don't copy it
+        // again to the same spot.
+        logLine((isMove ? 'MOVE ' : 'COPY ') + srcPath + ' already in progress (job #' + j.job_id + ') — skipped duplicate', 'info');
+      } else {
+        logLine((isMove ? 'MOVING ' : 'COPYING ') + srcPath + '  →  ' + dstDir + '  (job #' + j.job_id + ')', 'ok');
+        startPolling();
+      }
+      return true;
+    }
+    logLine((isMove ? 'MOVE ' : 'COPY ') + srcPath + '  →  ' + j.dst, 'ok');
+    await ls('A'); await ls('B');
+    return true;
+  } catch (err) {
+    if (err.elevation) {
+      const pw = await askPassword('Admin (sudo) password needed to write to ' + dstDir + ':');
+      if (pw) return await doOp(srcPath, dstDir, isMove, pw);
+    }
+    if (err.conflict) {
+      const strategy = await askConflict(err.dst || dstDir);
+      if (strategy === 'merge' || strategy === 'rename') {
+        return await doOp(srcPath, dstDir, isMove, sudopass, strategy);
+      }
+      logLine('skipped: ' + srcPath + ' (destination exists)', 'info');
+      return false;
+    }
+    logLine((isMove ? 'MOVE ' : 'COPY ') + srcPath + ': ' + err.message, 'err');
+    await ls('A'); await ls('B');
+    return false;
+  }
+}
+
+async function op(srcPanel, srcPaths, dstDir) {
+  const arr = Array.isArray(srcPaths) ? srcPaths : [srcPaths];
+  const label = arr.length > 1 ? arr.length + ' items' : arr[0].split('/').pop();
+  const choice = await askMode(label, dstDir);
+  if (!choice) { logLine('cancelled: ' + label, 'info'); return; }
+  for (const p of arr) await doOp(p, dstDir, choice === 'move');
+  clearSelection();
+}
+
+async function walkEntry(entry, base, out) {
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej));
+    out.push({ path: base + entry.name, file });
+  } else if (entry.isDirectory) {
+    out.push({ dir: base + entry.name });
+    const reader = entry.createReader();
+    for (;;) {
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      if (!batch.length) break;
+      for (const e of batch) await walkEntry(e, base + entry.name + '/', out);
+    }
+  }
+}
+
+async function uploadAll(out, dstDir) {
+  let files = 0;
+  for (const o of out) {
+    if (o.dir) {
+      try { await api('/api/mkdir?dst=' + encodeURIComponent(dstDir + '/' + o.dir)); } catch {}
+    }
+  }
+  for (const o of out) {
+    if (!o.file) continue;
+    const target = dstDir + '/' + o.path;
+    try {
+      const r = await fetch('/api/put?dst=' + encodeURIComponent(target), { method: 'POST', body: o.file });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      files++;
+    } catch (e) { logLine('UPLOAD ' + target + ': ' + e.message, 'err'); }
+  }
+  logLine('UPLOAD ' + files + ' file(s) into ' + dstDir, files ? 'ok' : 'err');
+  await ls('A'); await ls('B');
+}
+
+let sel = null;                 // last single-selected row {path,panel,name}
+let selAnchor = null;           // { path, panel } anchor used for Shift+click range selection
+let selected = new Map();       // multi-selection: path -> {path,panel,name}
+let clip = null;                // clipboard: { items:[{path,panel,name}], mode:'cut'|'copy' }
+let activePanel = 'A';          // panel that receives Ctrl+V / acts on Copy→ / Move→
+const statusEl = $('#status');
+
+function selectRow(row, s, additive) {
+  if (additive) {
+    const key = s.path;
+    if (selected.has(key)) {
+      selected.delete(key);
+      row.classList.remove('selected');
+    } else {
+      selected.set(key, s);
+      row.classList.add('selected');
+    }
+    sel = selected.size ? [...selected.values()][selected.size - 1] : null;
+  } else {
+    selected = new Map([[s.path, s]]);
+    document.querySelectorAll('.row.selected').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+    sel = s;
+  }
+  selAnchor = { path: s.path, panel: s.panel };
+  updateSelStatus();
+}
+
+// Shift+click: select the contiguous range from the last anchor row to this
+// row (in the same panel/listing), keeping any existing Ctrl-selected items.
+function selectRange(panel, row, s) {
+  const files = panel === 'A' ? $('#filesA') : $('#filesB');
+  const rows = [...files.querySelectorAll('.row')];
+  const targetIdx = rows.indexOf(row);
+  if (targetIdx < 0) { selectRow(row, s, false); return; }
+  // Anchor is the last clicked/selected path in this panel; default to top.
+  let anchorIdx = (selAnchor && selAnchor.panel === panel)
+    ? rows.findIndex(r => r.dataset.path === selAnchor.path)
+    : -1;
+  if (anchorIdx < 0) anchorIdx = 0;
+  const lo = Math.min(anchorIdx, targetIdx);
+  const hi = Math.max(anchorIdx, targetIdx);
+  for (let i = lo; i <= hi; i++) {
+    const r = rows[i];
+    const p = r.dataset.path;
+    if (!selected.has(p)) {
+      const nm = r.querySelector('.nm');
+      selected.set(p, { path: p, panel, name: nm ? nm.textContent.replace(/ →$/, '') : p });
+    }
+    r.classList.add('selected');
+  }
+  sel = s;
+  updateSelStatus();
+}
+
+function clearSelection() {
+  selected = new Map();
+  document.querySelectorAll('.row.selected').forEach(r => r.classList.remove('selected'));
+  sel = null;
+  updateSelStatus();
+}
+
+function updateSelStatus() {
+  statusEl.textContent = selected.size ? (selected.size + ' selected') : '';
+  // keep every row's checkbox in sync with the selection
+  for (const id of ['filesA', 'filesB']) {
+    const files = document.getElementById(id);
+    if (!files) continue;
+    for (const r of files.querySelectorAll('.row')) {
+      const ck = r.querySelector('.rowck');
+      if (ck) ck.checked = selected.has(r.dataset.path);
+    }
+  }
+}
+
+function selectedItems() {
+  if (selected.size) return [...selected.values()];
+  return sel ? [sel] : [];
+}
+
+async function paste() {
+  if (!clip || !clip.items || !clip.items.length) return;
+  const dstDir = state[activePanel];
+  if (!dstDir) return;
+  const items = clip.items;
+  const label = items.length > 1 ? items.length + ' items' : items[0].name;
+  const choice = await askMode(label, dstDir);
+  if (!choice) { logLine('cancelled paste: ' + label, 'info'); return; }
+  const isMove = choice === 'move';
+  for (const it of items) await doOp(it.path, dstDir, isMove);
+  if (isMove) clip = null;
+  clearSelection();
+}
+
+document.addEventListener('keydown', ev => {
+  if (!(ev.ctrlKey || ev.metaKey)) return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = ev.key.toLowerCase();
+  if (k === 'x' || k === 'c') {
+    const items = selectedItems();
+    if (!items.length) return;
+    ev.preventDefault();
+    clip = { items, mode: k === 'x' ? 'cut' : 'copy' };
+    const names = items.length > 1 ? items.length + ' items' : items[0].name;
+    statusEl.textContent = (clip.mode === 'cut' ? '✂ cut: ' : '⧉ copy: ') + names;
+  } else if (k === 'v') {
+    if (!clip) return;
+    ev.preventDefault();
+    paste();
+  }
+});
+
+function bindDrop(panel) {
+  const el = document.getElementById(panel === 'A' ? 'panelA' : 'panelB');
+  el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', async ev => {
+    ev.preventDefault(); el.classList.remove('dragover');
+    // OS file/folder drop (from Dolphin / file manager) -> upload into this panel's dir
+    const items = ev.dataTransfer.items;
+    if (items && [...items].some(it => it.kind === 'file')) {
+      let target = state[panel];
+      const row = ev.target.closest && ev.target.closest('.row[data-dir="1"]');
+      if (row) target = row.dataset.path;
+      const out = [];
+      for (const it of items) {
+        if (it.kind !== 'file') continue;
+        const e = it.webkitGetAsEntry && it.webkitGetAsEntry();
+        if (e) { await walkEntry(e, '', out); }
+        else {
+          const f = it.getAsFile && it.getAsFile();
+          if (f) out.push({ path: f.name, file: f });
+        }
+      }
+      if (out.length) await uploadAll(out, target);
+      return;
+    }
+    // internal A<->B drag (multi-select aware)
+    let data;
+    try { data = JSON.parse(ev.dataTransfer.getData('text/plain')); } catch { return; }
+    const paths = data && data.paths && data.paths.length
+      ? data.paths
+      : (data && data.path ? [data.path] : []);
+    if (!data || !paths.length) return;
+    let target = state[panel];
+    // dropping directly on a directory row moves INTO it
+    const row = ev.target.closest && ev.target.closest('.row[data-dir="1"]');
+    if (row) target = row.dataset.path;
+    if (data.panel === panel) {
+      // same-side drag: only meaningful when dropping INTO a folder row
+      if (!row) return;
+    }
+    op(data.panel, paths, target);
+  });
+}
+
+document.querySelectorAll('button[data-up]').forEach(b => {
+  b.addEventListener('click', () => {
+    const panel = b.dataset.up;
+    const inp = panel === 'A' ? $('#pathA') : $('#pathB');
+    const root = PC_ROOTS[panelSlot(panel)];
+    const cur = inp.value.replace(/\/+$/, '');
+    if (!cur && cur !== '/') return;
+    // Walk up one directory level. When we don't yet know the PC root (roots
+    // fetch hasn't finished), just go to the literal parent; the root-clamp
+    // only applies once PC_ROOTS is populated.
+    const parent = cur.substring(0, cur.lastIndexOf('/')) || '/';
+    if (root && cur !== root) {
+      // If the path is inside this panel's PC root, step up but stay clamped
+      // so we never escape the PC root into the local filesystem.
+      if (parent === root || parent.startsWith(root + '/')) {
+        inp.value = parent;
+        ls(panel);
+        return;
+      }
+      // Path isn't inside this panel's PC root (e.g. the panel's path box and
+      // its PC dropdown got out of sync) — never bail silently, just step up.
+      if (parent !== cur) { inp.value = parent; ls(panel); }
+      return;
+    }
+    // At the PC root, or root unknown: if we can step up without escaping the
+    // configured root, do so; otherwise stay put.
+    if (root && cur === root) return;   // already at the PC root — never escape
+    if (parent !== cur) { inp.value = parent; ls(panel); }
+  });
+});
+document.querySelectorAll('button[data-refresh]').forEach(b => {
+  b.addEventListener('click', () => ls(b.dataset.refresh));
+});
+$('#pathA').addEventListener('change', () => { slotPaths[panelSlot('A')] = $('#pathA').value; ls('A'); });
+$('#pathB').addEventListener('change', () => { slotPaths[panelSlot('B')] = $('#pathB').value; ls('B'); });
+
+bindDrop('A'); bindDrop('B');
+
+// middle bar: swap / copy-to / move-to
+$('#swapMid').addEventListener('click', () => {
+  [layout.left, layout.right] = [layout.right, layout.left];
+  applyLayout();
+});
+async function copyMoveToOther(isMove) {
+  const items = selectedItems();
+  if (!items.length) { logLine('nothing selected', 'info'); return; }
+  // Source panel = the panel the selection came from. We must NOT rely on
+  // activePanel (it can be stale / point at the wrong side), or the "other"
+  // panel ends up being the source and we get "source and destination are the
+  // same".
+  const srcPanel = (items[0] && items[0].panel) || activePanel;
+  const other = srcPanel === 'A' ? 'B' : 'A';
+  const dstDir = state[other];
+  // Guard: never move/copy onto the exact source directory.
+  if (!dstDir) return;
+  const srcDir = items[0].path.substring(0, items[0].path.lastIndexOf('/')) || '/';
+  if (dstDir.replace(/\/+$/, '') === srcDir.replace(/\/+$/, '')) {
+    logLine((isMove ? 'MOVE' : 'COPY') + ': source and destination are the same (' + srcDir + ')', 'err');
+    return;
+  }
+  const label = items.length > 1 ? items.length + ' items' : items[0].name;
+  if (!noConfirm) {
+    const action = isMove ? 'MOVE' : 'COPY';
+    const choice = await askMode(label + ' → ' + action, dstDir, isMove ? 'move' : 'copy');
+    if (!choice) { logLine('cancelled: ' + label, 'info'); return; }
+    isMove = choice === 'move';       // user may switch direction in the dialog
+  }
+  logLine((isMove ? 'MOVING ' : 'COPYING ') + label + ' → ' + dstDir, 'info');
+  for (const it of items) await doOp(it.path, dstDir, isMove);
+  clearSelection();
+}
+$('#copyMid').addEventListener('click', () => copyMoveToOther(false));
+$('#moveMid').addEventListener('click', () => copyMoveToOther(true));
+$('#delMid').addEventListener('click', deleteSelection);
+
+// Upload buttons (reliable path for local files/folders into a panel,
+// independent of OS drag-and-drop support in the browser).
+function setupUpload(panel) {
+  const filesInput = document.getElementById('file' + panel);
+  const folderInput = document.getElementById('folder' + panel);
+  filesInput.addEventListener('change', () => {
+    const out = [];
+    for (const f of filesInput.files) out.push({ path: f.name, file: f });
+    if (out.length && state[panel]) uploadAll(out, state[panel]);
+    filesInput.value = '';
+  });
+  folderInput.addEventListener('change', () => {
+    const out = [];
+    for (const f of folderInput.files) out.push({ path: f.webkitRelativePath, file: f });
+    if (out.length && state[panel]) uploadAll(out, state[panel]);
+    folderInput.value = '';
+  });
+  document.querySelector('button[data-files="' + panel + '"]')
+    .addEventListener('click', () => filesInput.click());
+  document.querySelector('button[data-folder="' + panel + '"]')
+    .addEventListener('click', () => folderInput.click());
+}
+setupUpload('A'); setupUpload('B');
+
+['A','B'].forEach(p => {
+  const panelEl = document.getElementById(p === 'A' ? 'panelA' : 'panelB');
+  const filesEl = document.getElementById(p === 'A' ? 'filesA' : 'filesB');
+  panelEl.addEventListener('click', () => { activePanel = p; });
+  filesEl.addEventListener('click', ev => {
+    if (ev.target === filesEl) {
+      document.querySelectorAll('.row.selected').forEach(r => r.classList.remove('selected'));
+      sel = null;
+    }
+  });
+});
+const SLOT_META = { this_pc: { label: 'This PC' }, target_pc: { label: 'Target PC' } };
+let slotPaths = { this_pc: null, target_pc: null };
+const PC_ROOTS = { this_pc: null, target_pc: null };   // fixed roots, never overwritten by navigation
+let layout = { left: 'target_pc', right: 'this_pc' };
+
+function panelSlot(panel) { return panel === 'A' ? layout.left : layout.right; }
+
+// Populate the per-panel PC dropdowns ("Target PC" / "This PC").
+function initPcSelects() {
+  for (const id of ['labelA', 'labelB']) {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '';
+    for (const [key, meta] of Object.entries(SLOT_META)) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = meta.label;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function applyLayout() {
+  $('#labelA').value = layout.left;
+  $('#labelB').value = layout.right;
+  $('#pathA').value = slotPaths[layout.left];
+  $('#pathB').value = slotPaths[layout.right];
+  ls('A'); ls('B');
+}
+
+// Changing a panel's dropdown points that panel at a different PC.
+$('#labelA').addEventListener('change', () => { layout.left = $('#labelA').value; applyLayout(); });
+$('#labelB').addEventListener('change', () => { layout.right = $('#labelB').value; applyLayout(); });
+
+$('#swapBtn').addEventListener('click', () => {
+  [layout.left, layout.right] = [layout.right, layout.left];
+  applyLayout();
+});
+
+// ---------- version badge + self-update ("updating server") ----------
+const verEl = document.getElementById('ver');
+const updateBtn = document.getElementById('updateBtn');
+const updatingEl = document.getElementById('updating');
+const updatingMsg = document.getElementById('updatingMsg');
+let serverCommit = null;
+
+async function fetchVersion() {
+  try {
+    const v = await api('/api/version');
+    // if the running commit differs from the one this tab loaded, the server
+    // has been updated under us -> this client is stale, tell it to sync.
+    if (serverCommit && v.commit && v.commit !== serverCommit) {
+      logLine('server updated to ' + v.commit + ' (was ' + serverCommit + ') — reloading to sync…', 'info');
+      setTimeout(() => location.reload(), 800);
+      return v;
+    }
+    serverCommit = v.commit;
+    verEl.textContent = 'v' + (v.version || '?') + ' · ' + (serverCommit || '?');
+    return v;
+  } catch { return null; }
+}
+
+function showUpdating(msg) {
+  updatingMsg.textContent = msg || '';
+  updatingEl.style.display = 'flex';
+}
+function hideUpdating() { updatingEl.style.display = 'none'; }
+
+// Wait for the daemon to come back after a restart, then reload the tab so the
+// browser picks up the newly-served UI.
+function waitForServer(prevCommit, tries) {
+  tries = tries || 0;
+  fetchVersion().then(v => {
+    if (v) {
+      showUpdating('back online (commit ' + (v.commit || '?') + ') — reloading…');
+      // give it a beat so the new HTML is fully served, then load fresh
+      setTimeout(() => location.reload(), 700);
+    } else if (tries < 60) {
+      setTimeout(() => waitForServer(prevCommit, tries + 1), 2000);
+    } else {
+      hideUpdating();
+      updateBtn.disabled = false;
+      logLine('server did not come back after update (see /tmp/file-mover-update.log)', 'err');
+    }
+  });
+}
+
+updateBtn.addEventListener('click', async () => {
+  updateBtn.disabled = true;
+  showUpdating('requesting update…');
+  try {
+    const r = await api('/api/update', { method: 'POST' });
+    if (r.updating) {
+      showUpdating('git pull + rebuild + restart in progress…');
+      // Poll until the daemon returns (with a new commit), then reload.
+      waitForServer(serverCommit);
+    } else {
+      hideUpdating(); updateBtn.disabled = false;
+      logLine('update not triggered', 'info');
+    }
+  } catch (e) {
+    hideUpdating(); updateBtn.disabled = false;
+    logLine('update request failed: ' + e.message, 'err');
+  }
+});
+
+(async () => {
+  // Show the running server commit in the header, and keep checking so a
+  // server update (however it is triggered) is noticed here and this client
+  // reloads to sync.
+  await fetchVersion();
+  setInterval(fetchVersion, 30000);
+})();
+
+initPcSelects();
+(async () => {
+  pollJobs();
+  try {
+    const roots = await api('/api/roots');
+    slotPaths.this_pc = roots.this_pc;
+    slotPaths.target_pc = roots.target_pc;
+    PC_ROOTS.this_pc = roots.this_pc;
+    PC_ROOTS.target_pc = roots.target_pc;
+    applyLayout();
+  } catch { applyLayout(); }
+})();
+</script>
+</body>
+</html>

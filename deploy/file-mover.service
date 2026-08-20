@@ -1,0 +1,16 @@
+[Unit]
+Description=file-mover - two-panel drag & drop file mover UI (http://0.0.0.0:8787)
+# The mover browses local rclone WebDAV mounts. Put any rclone-mount-*.service
+# units it depends on here (they must also be user/*.service units).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO__
+ExecStart=__REPO__/target/release/file-mover
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

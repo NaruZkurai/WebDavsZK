@@ -1,0 +1,23 @@
+# Rust build output
+/target
+
+# TLS material (never commit private keys)
+certs/*.crt
+certs/*.key
+certs/*.pem
+
+# Local environment overrides
+.env
+
+# Local runtime config (auto-created from config/env.example)
+/config/env
+
+# Default launch.sh data directory
+/webdav_root
+
+# Editor cruft
+*.swp
+.DS_Store
+
+# Request logs (grow at runtime)
+/logs/

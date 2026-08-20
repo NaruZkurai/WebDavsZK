@@ -1,0 +1,12 @@
+[Unit]
+Description=nzk-webdavs auto-update (git pull + rebuild + restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust paths + user to your deployment:
+WorkingDirectory=/opt/nzk-webdavs
+ExecStart=/opt/nzk-webdavs/update.sh
+User=webdav
+Group=webdav

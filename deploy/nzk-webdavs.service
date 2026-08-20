@@ -1,0 +1,34 @@
+[Unit]
+Description=nzk-webdavs - robust Rust WebDAVS server (KDE KIO friendly)
+Documentation=https://github.com/yourname/nzk-webdavs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=webdav
+Group=webdav
+WorkingDirectory=/srv/webdav
+EnvironmentFile=/etc/nzk-webdavs/nzk-webdavs.env
+ExecStart=/usr/local/bin/nzk-webdavs
+Restart=on-failure
+RestartSec=3
+
+# Large transfers are streamed to disk, but a busy recursive copy can open a
+# lot of descriptors (many parallel connections + files).
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# Only the served tree needs to be writable:
+ReadWritePaths=/srv/webdav
+# Kill long-running uploads on stop? Prefer graceful: give in-flight transfers
+# time to finish (the server itself drains connections on SIGTERM).
+TimeoutStopSec=35
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
